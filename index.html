@@ -153,7 +153,7 @@ overflow: hidden;
 }
 .sheet-header{
   display:flex; align-items:center; justify-content:space-between;
-  padding:16px 20px 12px; flex-shrink:0; background:#fff; z-index:2; zoom: 1; 
+  padding:16px 20px 12px; flex-shrink:0; background:#fff; z-index:2; zoom: var(--ui-scale); 
 }
 .score-badge,.event-tag{
   display:flex; align-items:center; gap:6px;
@@ -177,7 +177,7 @@ overflow: hidden;
 #settingPage{
   position:absolute; inset:0; background:#fff; z-index:200;
   overflow-y:auto;
-  zoom:1;               /* Chrome & Firefox 126+ 支持 */
+  zoom:var(--ui-scale);               /* Chrome & Firefox 126+ 支持 */
   opacity:0;
   visibility:hidden;
   transform: translateX(100%);
@@ -621,7 +621,7 @@ body.glass-experimental .pill-btn {
     <div class="set-header">
       <button class="backbtn" id="setBack">‹</button>
       <h2>设置</h2>
-      <i>v0.4.5</i>
+      <i>v0.4.7</i>
     </div>
 
     <div class="cat-title" style="margin-left:20px; margin-top:24px; font-weight:600;"><i>通用</i></div>
@@ -1824,6 +1824,8 @@ function applySettings() {
   document.documentElement.style.setProperty('--ui-bg-saturate', settings.bgSaturate);
   document.documentElement.style.setProperty('--ui-bg-inner-shadow', settings.bgInnerShadow);
   document.body.classList.toggle('glass-experimental', settings.experimentalGlass);
+    document.documentElement.style.setProperty('--ui-scale', settings.uiScale);
+    
   updateBgButtons();
   if (settings.preload) {
   preloadAllCardVideos();
@@ -1848,7 +1850,7 @@ if (settings.experimentalGlass) {
 } else {
   destroyButtonLiquidGlass();
 }
-document.body.style.zoom = settings.uiScale;
+
 }
 
 // 循环按钮
@@ -1968,8 +1970,7 @@ switchVConsole = createLiquidGlassSwitch(
   document.getElementById('sliderUiScale'), 'filterSliderUiScale',
   settings.uiScale, 0.5, 2.0, 0.02,
   (val) => {
-    settings.uiScale = val;
-    document.body.style.zoom = val;   // 页面缩放立即生效
+    settings.uiScale = val;   // 页面缩放立即生效
     saveSettings();
   }
 );
