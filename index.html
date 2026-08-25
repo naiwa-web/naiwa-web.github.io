@@ -9,6 +9,7 @@
 <!-- <link rel="manifest" href="manifest.json"> -->
 <link rel="icon" type="image/png" href="./AppIcon76x76@2x~ipad.png">
 <title>奶蛙</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
 /* ========== 基础样式 ========== */
 *,
@@ -80,7 +81,7 @@ body{
   left:0; width:100%;
   display:flex; justify-content:center; align-items:center;
   gap:calc(24px * 1);
-  z-index:2;
+  z-index:1000;
 }
 .circle-btn,.pill-btn,.setting-btn{
   position: relative;
@@ -445,6 +446,54 @@ body.glass-experimental .pill-btn {
   transition: transform 0.1s;
 }
 
+/* 渲染模式：SVG（默认） */
+body.render-mode-svg .circle-btn,
+body.render-mode-svg .setting-btn {
+  backdrop-filter: url(#buttonLiquidFilter) blur(0px) saturate(150%);
+  -webkit-backdrop-filter: url(#buttonLiquidFilter) blur(0px) saturate(150%);
+}
+body.render-mode-svg .pill-btn {
+  backdrop-filter: url(#buttonLiquidFilterPill) blur(0px) saturate(150%);
+  -webkit-backdrop-filter: url(#buttonLiquidFilterPill) blur(0px) saturate(150%);
+}
+
+/* 渲染模式：WebGL */
+body.render-mode-webgl .circle-btn,
+body.render-mode-webgl .setting-btn,
+body.render-mode-webgl .pill-btn {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none;
+  box-shadow: none;
+}
+/* WebGL 模式下的按钮文字/图标保持可见 */
+.circle-btn > *,
+.pill-btn > *,
+.setting-btn > *,
+#btnStopRewind > * {
+  position: relative;
+  z-index: 2;
+}
+
+body.render-mode-webgl .circle-btn,
+body.render-mode-webgl .pill-btn,
+body.render-mode-webgl .setting-btn,
+body.render-mode-webgl #btnStopRewind {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+   z-index: 10;
+  border: none;
+  box-shadow: none;
+}
+
+body.render-mode-webgl .circle-btn,
+body.render-mode-webgl .pill-btn,
+body.render-mode-webgl .setting-btn,
+body.render-mode-webgl #btnStopRewind {
+  background: rgba(0, 0, 0, 0.25) !important;   /* 轻微背景，让文字突出 */
+}
 </style>
 </head>
 <body>
@@ -711,7 +760,7 @@ body.glass-experimental .pill-btn {
 </div>
       <!-- 实验性液态玻璃风格 Switch -->
       <div class="set-row">
-        <div>实验性液态玻璃风格</div>
+        <div>实验性液态玻璃</div>
         <div class="switch-wrap" id="wrapExperimental">
           <div class="switch-track" data-target="experimental">
             <div class="switch-thumb">
@@ -722,7 +771,19 @@ body.glass-experimental .pill-btn {
           </div>
         </div>
       </div>
-      
+ <!-- 渲染模式 Switch -->
+<div class="set-row">
+  <div>开启WebGL渲染模式<i style="color: #ff6b6b;">[beta]</i></div>
+  <div class="switch-wrap" id="wrapRenderMode">
+    <div class="switch-track" data-target="renderMode">
+      <div class="switch-thumb">
+        <div class="switch-thumb-clone"><div class="switch-thumb-clone-inner"></div></div>
+        <svg class="glass-filter-svg"><defs><filter id="filterRenderMode" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceGraphic" stdDeviation="0.2" result="blurred_source"/><feImage href="" x="0" y="0" width="146" height="92" result="displacement_map" preserveAspectRatio="none"/><feDisplacementMap in="blurred_source" in2="displacement_map" scale="25" xChannelSelector="R" yChannelSelector="G" result="displaced"/><feColorMatrix in="displaced" type="saturate" values="6" result="displaced_saturated"/><feImage href="" x="0" y="0" width="146" height="92" result="specular_layer" preserveAspectRatio="none"/><feComposite in="displaced_saturated" in2="specular_layer" operator="in" result="specular_saturated"/><feComponentTransfer in="specular_layer" result="specular_faded"><feFuncA type="linear" slope="0.5"/></feComponentTransfer><feBlend in="specular_saturated" in2="displaced" mode="normal" result="withSaturation"/><feBlend in="specular_faded" in2="withSaturation" mode="normal"/></filter></defs></svg>
+        <div class="switch-thumb-inner"></div>
+      </div>
+    </div>
+  </div>
+</div>     
 <div class="set-row">
   <div>预加载所有视频</div>
   <div class="switch-wrap" id="wrapPreload">
@@ -850,7 +911,7 @@ body.glass-experimental .pill-btn {
 
       <div>
           <i>
-            *基于svg的液态玻璃在较新chrome和firefox中可用，safari不可用。
+            *svg模式的液态玻璃在较新chrome中可用，<a style="color:#ff6600">safari和firefox不可用。</a><a style="color: #00ff40;">WebGl全平台通用</a>
           </i>
       </div>
       <div>
@@ -867,6 +928,7 @@ body.glass-experimental .pill-btn {
 <script src="https://cdn.jsdelivr.net/npm/vconsole"></script>
 
 <script>
+  let currentWebGLVideo = null;
   // 动态加载 vConsole
 function loadVConsole() {
   if (vConsoleInstance) return; // 已加载
@@ -1637,7 +1699,329 @@ function destroyButtonLiquidGlass() {
   }
 }
 
+// ==================== WebGL 渲染模式（每按钮独立画布） ====================
+let webglButtonContexts = [];   // 存储每个按钮的渲染器、材质等
+let sharedVideoTexture = null;  // 共享视频纹理
+let sharedVideoElement = null;  // 当前视频元素
 
+function initWebGL() {
+  if (webglButtonContexts.length > 0) return; // 已初始化
+
+  // 创建共享视频纹理
+  sharedVideoElement = mainVideo;
+  sharedVideoTexture = new THREE.VideoTexture(sharedVideoElement);
+  sharedVideoTexture.minFilter = THREE.LinearFilter;
+  sharedVideoTexture.magFilter = THREE.LinearFilter;
+  sharedVideoTexture.flipY = false;   // 关键：防止视频上下颠倒
+
+  // 获取可见按钮
+  const buttons = document.querySelectorAll('.circle-btn, .pill-btn, .setting-btn, #btnStopRewind');
+  buttons.forEach(btn => {
+    if (btn.offsetWidth === 0 || btn.offsetHeight === 0) return; // 隐藏的按钮跳过
+
+    // 创建 canvas 作为按钮的子元素
+    const canvas = document.createElement('canvas');
+    canvas.style.position = 'absolute';
+    canvas.style.left = '0';
+    canvas.style.top = '0';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.pointerEvents = 'none';
+    canvas.style.zIndex = '0';        // 位于文字下方
+    btn.appendChild(canvas);
+
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(btn.offsetWidth, btn.offsetHeight);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+    // 获取按钮形状参数
+    const isCircle = !btn.classList.contains('pill-btn');
+    const btnWidth = btn.offsetWidth;
+    const btnHeight = btn.offsetHeight;
+    const btnRadius = isCircle ? btnWidth / 2 : btnHeight / 2;
+
+    // 创建顶点和片段着色器
+    const vertexShader = `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = vec4(position, 1.0);
+      }
+    `;
+
+    const fragmentShader = `
+      precision highp float;
+      varying vec2 vUv;
+
+      uniform vec2 uResolution;         // 按钮渲染尺寸（像素）
+      uniform vec2 uCenterUV;           // 按钮中心在视频纹理中的 UV
+      uniform vec2 uSizeUV;             // 按钮尺寸对应视频 UV 的跨度
+      uniform float uRadius;            // 圆角半径（局部像素）
+      uniform float uBezel;
+      uniform float uThickness;
+      uniform float uIOR;
+      uniform float uBlur;
+      uniform float uSpecular;
+      uniform float uTint;
+      uniform float uShadow;
+      uniform sampler2D uVideoTex;
+
+      float sdRoundedRect(vec2 p, vec2 halfSize, float r) {
+        vec2 q = abs(p) - halfSize + r;
+        return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+      }
+
+      float surfaceHeight(float t) {
+        float s = 1.0 - t;
+        return pow(1.0 - s*s*s*s, 0.25);
+      }
+
+      vec3 sampleVideo(vec2 uv) {
+        // 处理视频边界外返回黑色
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+          return vec3(0.0);
+        }
+        uv.y = 1.0 - uv.y; // 翻转 Y 轴
+        return texture2D(uVideoTex, uv).rgb;
+      }
+
+      vec3 sampleVideoBlurred(vec2 uv, float radius) {
+        if (radius < 0.5) return sampleVideo(uv);
+        vec3 sum = vec3(0.0);
+        vec2 px = 1.0 / uResolution;
+        vec2 offsets[16];
+        offsets[0]  = vec2(-0.94201, -0.39906);
+        offsets[1]  = vec2( 0.94558, -0.76890);
+        offsets[2]  = vec2(-0.09418, -0.92938);
+        offsets[3]  = vec2( 0.34495,  0.29387);
+        offsets[4]  = vec2(-0.91588, -0.45771);
+        offsets[5]  = vec2(-0.81544,  0.48568);
+        offsets[6]  = vec2(-0.38277, -0.56071);
+        offsets[7]  = vec2(-0.12675,  0.84686);
+        offsets[8]  = vec2( 0.89642,  0.41254);
+        offsets[9]  = vec2( 0.18150, -0.30020);
+        offsets[10] = vec2(-0.01445, -0.16001);
+        offsets[11] = vec2( 0.59614,  0.71118);
+        offsets[12] = vec2( 0.49742, -0.47280);
+        offsets[13] = vec2( 0.80685,  0.04588);
+        offsets[14] = vec2(-0.32490, -0.03965);
+        offsets[15] = vec2(-0.60975,  0.06566);
+        for (int i = 0; i < 16; i++) {
+          sum += sampleVideo(uv + offsets[i] * radius * px);
+        }
+        return sum / 16.0;
+      }
+
+      void main() {
+      
+        // 局部坐标：以按钮中心为原点，范围 -halfSize 到 halfSize
+        vec2 halfSize = uResolution * 0.5;
+        vec2 p = vec2(vUv.x - 0.5, 0.5 - vUv.y) * uResolution;
+
+        float sd = sdRoundedRect(p, halfSize, uRadius);
+
+        if (sd > 0.0) {
+          float shadowFalloff = exp(-sd * sd / 800.0);
+          float shadowAlpha = uShadow * shadowFalloff * 0.6;
+          gl_FragColor = vec4(0.0, 0.0, 0.0, shadowAlpha);
+          return;
+        }
+
+        float distFromEdge = -sd;
+        float bezel = min(uBezel, uRadius - 1.0);
+        float t = clamp(distFromEdge / bezel, 0.0, 1.0);
+
+        float h = surfaceHeight(t);
+        float dt = 0.001;
+        float h2 = surfaceHeight(min(t + dt, 1.0));
+        float dh = (h2 - h) / dt;
+
+        float slopeAngle = atan(dh * (uThickness / bezel));
+        float sinR = sin(slopeAngle) / uIOR;
+        sinR = clamp(sinR, -1.0, 1.0);
+        float thetaR = asin(sinR);
+        float displacement = h * uThickness * (tan(slopeAngle) - tan(thetaR));
+
+        vec2 grad;
+        float eps = 0.5;
+        grad.x = sdRoundedRect(p + vec2(eps, 0.0), halfSize, uRadius) - sd;
+        grad.y = sdRoundedRect(p + vec2(0.0, eps), halfSize, uRadius) - sd;
+        grad = normalize(grad);
+
+        // 将局部像素位移转换为 UV 位移
+        vec2 uvOffset = -grad * displacement / uResolution;
+
+        // 计算基础 UV（按钮中心在视频中的 UV）
+        vec2 baseUV = uCenterUV + (vUv - 0.5) * uSizeUV;
+        vec2 refractedUV = baseUV + uvOffset;
+
+        vec3 color = sampleVideoBlurred(refractedUV, uBlur);
+
+        // 添加高光和内阴影
+        vec2 lightDir = normalize(vec2(0.5, -0.7));
+        float rimDot = abs(dot(grad, lightDir));
+        float rimFalloff = 1.0 - smoothstep(0.0, bezel * 0.4, distFromEdge);
+        float specHighlight = pow(rimDot * rimFalloff, 1.5);
+        color += vec3(specHighlight * uSpecular);
+
+        float innerShadow = 1.0 - smoothstep(0.0, bezel * 0.6, distFromEdge);
+        color *= mix(1.0, 0.7, innerShadow * 0.3);
+
+        float innerRim = smoothstep(0.0, 2.0, distFromEdge) * (1.0 - smoothstep(2.0, 5.0, distFromEdge));
+        color += vec3(innerRim * 0.15 * uSpecular);
+
+        color = mix(color, vec3(1.0), uTint);
+
+        float alpha = smoothstep(0.0, 1.5, distFromEdge);
+        gl_FragColor = vec4(color, alpha);
+      }
+    `;
+
+    // 初始化材质
+    const uniforms = {
+      uResolution: { value: new THREE.Vector2(btn.offsetWidth * window.devicePixelRatio, btn.offsetHeight * window.devicePixelRatio) },
+      uCenterUV: { value: new THREE.Vector2(0.5, 0.5) },   // 临时值，更新函数会设置
+      uSizeUV: { value: new THREE.Vector2(1.0, 1.0) },     // 临时值
+      uRadius: { value: btnRadius },
+      uBezel: { value: 8 },
+      uThickness: { value: 30 },
+      uIOR: { value: 1.2 },
+      uBlur: { value: 0.5 },
+      uSpecular: { value: 0.55 },
+      uTint: { value: 0.08 },
+      uShadow: { value: 0.5 },
+      uVideoTex: { value: sharedVideoTexture },
+    };
+
+    const material = new THREE.ShaderMaterial({
+      vertexShader,
+      fragmentShader,
+      uniforms,
+      transparent: true,
+      depthTest: false,
+    });
+
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+    scene.add(plane);
+
+    // 保存上下文
+    webglButtonContexts.push({
+      btn,
+      canvas,
+      renderer,
+      scene,
+      camera,
+      material,
+      uniforms,
+    });
+  });
+
+  // 初始化位置和渲染循环
+  updateButtonWebGLParams();
+  startButtonWebGLRenderLoop();
+}
+
+function updateButtonWebGLParams() {
+  if (!webglButtonContexts.length) return;
+
+  // 获取视频显示区域（用于计算 UV 映射）
+  const videoRect = getVideoDisplayRect();
+
+  webglButtonContexts.forEach((ctx) => {
+    const rect = ctx.btn.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    // 计算按钮中心在视频显示区域内的 UV
+    let u = (centerX - videoRect.left) / videoRect.width;
+    let v = (centerY - videoRect.top) / videoRect.height;
+    u = Math.max(0, Math.min(1, u));
+    v = Math.max(0, Math.min(1, v));
+
+    // 按钮尺寸映射到视频 UV 跨度
+    const uvWidth = rect.width / videoRect.width;
+    const uvHeight = rect.height / videoRect.height;
+
+    ctx.uniforms.uCenterUV.value.set(u, v);
+    ctx.uniforms.uSizeUV.value.set(uvWidth, uvHeight);
+
+    // 更新渲染器尺寸（如果按钮大小变化）
+    if (ctx.renderer.domElement.width !== rect.width || ctx.renderer.domElement.height !== rect.height) {
+      ctx.renderer.setSize(rect.width, rect.height);
+ctx.uniforms.uResolution.value.set(rect.width * window.devicePixelRatio, rect.height * window.devicePixelRatio);
+      ctx.uniforms.uRadius.value = ctx.btn.classList.contains('pill-btn') ? rect.height / 2 : rect.width / 2;
+    }
+  });
+}
+
+function getVideoDisplayRect() {
+  const videoRect = mainVideo.getBoundingClientRect();
+  const containerRect = viewportContainer.getBoundingClientRect();
+
+  // 如果视频使用 contain 模式，需要计算实际显示区域
+  const isContain = mainVideo.classList.contains('mode-contain');
+  if (isContain) {
+    const videoAspect = mainVideo.videoWidth / mainVideo.videoHeight;
+    const containerAspect = containerRect.width / containerRect.height;
+    let drawWidth = containerRect.width;
+    let drawHeight = containerRect.height;
+    let left = containerRect.left;
+    let top = containerRect.top;
+
+    if (videoAspect > containerAspect) {
+      drawHeight = containerRect.width / videoAspect;
+      top = containerRect.top + (containerRect.height - drawHeight) / 2;
+    } else {
+      drawWidth = containerRect.height * videoAspect;
+      left = containerRect.left + (containerRect.width - drawWidth) / 2;
+    }
+    return { left, top, width: drawWidth, height: drawHeight };
+  } else {
+    // cover 模式：视频填满容器
+    return { left: containerRect.left, top: containerRect.top, width: containerRect.width, height: containerRect.height };
+  }
+}
+
+function startButtonWebGLRenderLoop() {
+  function loop() {
+    if (!webglButtonContexts.length) return;
+    // 更新按钮位置和视频纹理
+    if (sharedVideoTexture && sharedVideoElement) {
+      sharedVideoTexture.needsUpdate = true;
+    }
+    updateButtonWebGLParams();
+    webglButtonContexts.forEach((ctx) => {
+      ctx.renderer.render(ctx.scene, ctx.camera);
+    });
+    requestAnimationFrame(loop);
+  }
+  loop();
+}
+
+function destroyWebGL() {
+  webglButtonContexts.forEach((ctx) => {
+    ctx.renderer.dispose();
+    ctx.material.dispose();
+    if (ctx.canvas.parentNode) ctx.canvas.parentNode.removeChild(ctx.canvas);
+  });
+  webglButtonContexts = [];
+  if (sharedVideoTexture) {
+    sharedVideoTexture.dispose();
+    sharedVideoTexture = null;
+  }
+  sharedVideoElement = null;
+}
+
+function updateWebGLTexture(videoElement) {
+  if (sharedVideoTexture) {
+    sharedVideoTexture.image = videoElement;
+    sharedVideoTexture.needsUpdate = true;
+    sharedVideoElement = videoElement;
+  }
+}
 
 // ==================== 业务逻辑 ====================
 const viewportContainer = document.getElementById('viewport-container');
@@ -1685,6 +2069,7 @@ function switchToReverse() {
     reverseVideo.currentTime = reverseVideo.duration - origTime;
     reverseVideo.muted = false;
     reverseVideo.play().catch(() => { pendingSwitch = false; });
+    updateWebGLTexture(reverseVideo)
   }, { once: true });
 
   reverseVideo.addEventListener('playing', function onPlaying() {
@@ -1698,6 +2083,7 @@ function switchToReverse() {
 }
 
 function switchToMainForPlay() {
+  updateWebGLTexture(mainVideo)
   if (pendingSwitch || isExiting) return;
   pendingSwitch = true;
   const reverseTime = reverseVideo.currentTime;
@@ -1773,6 +2159,7 @@ const defaultSettings = {
   preload: false,
   vConsoleEnabled: false,   // 调试面板开关
   cacheDone: false,   // 视频是否已全部缓存
+  renderMode: 'svg',
 };
 let settings = Object.assign({}, defaultSettings, loadSettings());
 
@@ -1851,6 +2238,20 @@ if (settings.experimentalGlass) {
   destroyButtonLiquidGlass();
 }
 
+applyRenderMode(settings.renderMode);
+}
+
+function applyRenderMode(mode) {
+  if (mode === 'webgl') {
+    document.body.classList.remove('render-mode-svg');
+    document.body.classList.add('render-mode-webgl');
+    if (webglButtonContexts.length === 0) initWebGL();
+    else updateWebGLTexture(mainVideo);
+  } else {
+    document.body.classList.remove('render-mode-webgl');
+    document.body.classList.add('render-mode-svg');
+    destroyWebGL();
+  }
 }
 
 // 循环按钮
@@ -1890,6 +2291,15 @@ document.querySelectorAll('.card-item').forEach(el => {
 
 // 设置页打开初始化
 btnOpenSet.onclick = () => {
+  switchRenderMode = createLiquidGlassSwitch(
+  document.querySelector("#wrapRenderMode"), "filterRenderMode",
+  (checked) => {
+    settings.renderMode = checked ? 'webgl' : 'svg';
+    saveSettings();
+    applyRenderMode(settings.renderMode);
+  },
+  settings.renderMode === 'webgl'
+);
   settingPage.classList.add('show');
   if (!switchInited) {
     document.body.getBoundingClientRect();
@@ -2029,7 +2439,10 @@ bgButtons.forEach(btn => {
 });
 
 // 方向变化时更新视频适应
-window.addEventListener('resize', updateVideoFit);
+window.addEventListener('resize', updateVideoFit ,() => {
+  if (webglRenderer) {
+    updateWebGLShapePositions();
+  }});
 window.addEventListener('orientationchange', () => setTimeout(updateVideoFit, 100));
 
 // 卡包封面初始化
@@ -2249,6 +2662,7 @@ function enterRewindMode() {
 
   rewindMode = true;
   bottomUi.classList.add('rewind-mode');
+  refreshWebGLButtons();
   btnLoop.classList.remove('spinning');
   btnLoop.querySelector('.icon-loop').textContent = '♻️';
 
@@ -2284,6 +2698,7 @@ function exitRewindMode() {
   isExiting = true;
 
   bottomUi.classList.remove('rewind-mode');
+  refreshWebGLButtons();
   btnLoop.classList.remove('spinning');
   btnLoop.querySelector('.icon-loop').textContent = '♻️';
 
@@ -2573,6 +2988,21 @@ btnCacheAllVideos.addEventListener('click', async () => {
   cacheProgressDiv.style.display = 'none';
 });
 
+function updateWebGLTexture(videoElement) {
+  if (webglVideoTexture) {
+    webglVideoTexture.image = videoElement;
+    webglVideoTexture.needsUpdate = true;
+    currentWebGLVideo = videoElement;   // 记录当前视频元素
+  }
+}
+
+function refreshWebGLButtons() {
+  if (settings.renderMode === 'webgl') {
+    destroyWebGL();
+    initWebGL();
+  }
+}
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js')
@@ -2580,6 +3010,7 @@ if ('serviceWorker' in navigator) {
       .catch(err => console.error('❌ Service Worker 注册失败:', err));
   });
 }
+
 </script>
 </body>
 </html>
