@@ -491,9 +491,9 @@ body.render-mode-webgl #btnStopRewind > * {
 </head>
 <body>
 <div id="viewport-container">
-  <video id="mainVideo" class="mode-cover" src="a1-glimpse.mp4" loop playsinline></video>
+  <video id="mainVideo" class="mode-cover" src="a1-glimpse.mp4" loop playsinline crossorigin="anonymous"></video>
   <!-- 新增倒放专用视频（默认隐藏） -->
-  <video id="reverseVideo" class="mode-cover" style="display:none;" loop playsinline></video>
+  <video id="reverseVideo" class="mode-cover" style="display:none;" loop playsinline crossorigin="anonymous"></video>
   <canvas id="bgExpandCanvas" style="display:none; position:absolute; inset:0; z-index:1; pointer-events:none;"></canvas>
   <div class="bottom-ui" id="bottomUi">
   <button class="circle-btn" id="btnStopRewind">
@@ -664,7 +664,7 @@ body.render-mode-webgl #btnStopRewind > * {
     <div class="set-header">
       <button class="backbtn" id="setBack">‹</button>
       <h2>设置</h2>
-      <i>v0.5.0</i>
+      <i>v0.5.1</i>
     </div>
 
     <div class="cat-title" style="margin-left:20px; margin-top:24px; font-weight:600;"><i>通用</i></div>
@@ -939,6 +939,7 @@ body.render-mode-webgl #btnStopRewind > * {
 <script src="https://cdn.jsdelivr.net/npm/vconsole"></script>
 
 <script>
+  
   let currentWebGLVideo = null;
   // 动态加载 vConsole
 function loadVConsole() {
@@ -2043,6 +2044,12 @@ function updateWebGLTexture(videoElement) {
     sharedVideoTexture.needsUpdate = true;
     sharedVideoElement = videoElement;
   }
+
+  if (webglVideoTexture) {
+    webglVideoTexture.image = videoElement;
+    webglVideoTexture.needsUpdate = true;
+    currentWebGLVideo = videoElement;   // 记录当前视频元素
+}
 }
 
 // ==================== 业务逻辑 ====================
@@ -2306,8 +2313,15 @@ closeCard.onclick = () => cardModal.classList.remove('show');
 cardModal.onclick = e => { if (e.target === cardModal) cardModal.classList.remove('show'); };
 document.querySelectorAll('.card-item').forEach(el => {
   el.onclick = () => {
+    
     const v = el.dataset.video;
+    video.crossOrigin = 'anonymous';   // 确保新源也跨域
+video.src = getMediaUrl(v);
+video.load();                      // 重新加载
+video.play().catch(() => {});
+updateWebGLTexture(video);         // 更新 WebGL 纹理
     if (v) {
+      
       if (rewindMode) exitRewindMode(); // 关键：先退出倒放
       video.src = getMediaUrl(v);
       video.play().catch(() => {});
@@ -2504,6 +2518,7 @@ window.addEventListener('orientationchange', () => setTimeout(updateVideoFit, 10
 // 卡包封面初始化
 function initCardThumbs() {
   document.querySelectorAll('.card-item').forEach(card => {
+    
     const src = card.dataset.video;
     const thumb = card.querySelector('.card-thumb');
     if (!src || !thumb || thumb.querySelector('video')) return;
@@ -3044,13 +3059,7 @@ btnCacheAllVideos.addEventListener('click', async () => {
   cacheProgressDiv.style.display = 'none';
 });
 
-function updateWebGLTexture(videoElement) {
-  if (webglVideoTexture) {
-    webglVideoTexture.image = videoElement;
-    webglVideoTexture.needsUpdate = true;
-    currentWebGLVideo = videoElement;   // 记录当前视频元素
-  }
-}
+
 
 function refreshWebGLButtons() {
   if (settings.renderMode === 'webgl') {
