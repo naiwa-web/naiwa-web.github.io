@@ -664,7 +664,7 @@ body.render-mode-webgl #btnStopRewind > * {
     <div class="set-header">
       <button class="backbtn" id="setBack">‹</button>
       <h2>设置</h2>
-      <i>v0.5.2</i>
+      <i>v0.5.3R</i>
     </div>
 
     <div class="cat-title" style="margin-left:20px; margin-top:24px; font-weight:600;"><i>通用</i></div>
@@ -1744,19 +1744,24 @@ function initWebGL() {
     if (btn.offsetWidth === 0 || btn.offsetHeight === 0) return; // 隐藏的按钮跳过
 
     // 创建 canvas 作为按钮的子元素
-    const canvas = document.createElement('canvas');
-    canvas.style.position = 'absolute';
-    canvas.style.left = '0';
-    canvas.style.top = '0';
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
-    canvas.style.pointerEvents = 'none';
-    canvas.style.zIndex = '0';        // 位于文字下方
-    btn.appendChild(canvas);
+// 获取按钮实际显示尺寸（包含浏览器缩放影响）
+const rect = btn.getBoundingClientRect();
+const displayWidth = rect.width;
+const displayHeight = rect.height;
+
+const canvas = document.createElement('canvas');
+canvas.style.position = 'absolute';
+canvas.style.left = '0';
+canvas.style.top = '0';
+canvas.style.width = displayWidth + 'px';    // 固定像素，避免百分比拉伸
+canvas.style.height = displayHeight + 'px';
+canvas.style.pointerEvents = 'none';
+canvas.style.zIndex = '0';
+btn.appendChild(canvas);
 
 const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
-renderer.setSize(btn.offsetWidth, btn.offsetHeight);
+renderer.setSize(displayWidth, displayHeight, false);  // false 表示不修改 CSS 样式
 
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -1980,11 +1985,16 @@ function updateButtonWebGLParams() {
     ctx.uniforms.uSizeUV.value.set(uvWidth, uvHeight);
 
     // 更新渲染器尺寸（如果按钮大小变化）
-    if (ctx.renderer.domElement.width !== rect.width || ctx.renderer.domElement.height !== rect.height) {
-      ctx.renderer.setSize(rect.width, rect.height);
-ctx.uniforms.uResolution.value.set(rect.width * window.devicePixelRatio, rect.height * window.devicePixelRatio);
-      ctx.uniforms.uRadius.value = ctx.btn.classList.contains('pill-btn') ? rect.height / 2 : rect.width / 2;
-    }
+    // 确保 canvas 的 CSS 尺寸与实际显示尺寸一致
+const currentWidth = parseFloat(ctx.canvas.style.width);
+const currentHeight = parseFloat(ctx.canvas.style.height);
+if (currentWidth !== rect.width || currentHeight !== rect.height) {
+  ctx.canvas.style.width = rect.width + 'px';
+  ctx.canvas.style.height = rect.height + 'px';
+  ctx.renderer.setSize(rect.width, rect.height, false);
+  ctx.uniforms.uResolution.value.set(rect.width * window.devicePixelRatio, rect.height * window.devicePixelRatio);
+  ctx.uniforms.uRadius.value = ctx.btn.classList.contains('pill-btn') ? rect.height / 2 : rect.width / 2;
+}
   });
 }
 
@@ -2101,62 +2111,62 @@ function switchToReverse() {
   reverseVideo.className = mainVideo.className;
   reverseVideo.load();
 
-  reverseVideo.addEventListener('loadedmetadata', function onMeta() {
-    reverseVideo.removeEventListener('loadedmetadata', onMeta);
+  function onLoadedMetadata() {
+    reverseVideo.removeEventListener('loadedmetadata', onLoadedMetadata);
     reverseVideo.currentTime = reverseVideo.duration - origTime;
     reverseVideo.muted = false;
     reverseVideo.play().catch(() => { pendingSwitch = false; });
-    updateWebGLTexture(reverseVideo)
-  }, { once: true });
+    updateWebGLTexture(reverseVideo);
+  }
+  reverseVideo.addEventListener('loadedmetadata', onLoadedMetadata);
 
-  reverseVideo.addEventListener('playing', function onPlaying() {
-  reverseVideo.removeEventListener('playing', onPlaying);
-  // 先显示倒放视频，再隐藏主视频
-  reverseVideo.style.display = 'block';
-  mainVideo.style.display = 'none';
-  isReversePlaying = true;
-  pendingSwitch = false;
-}, { once: true });
+  function onPlaying() {
+    reverseVideo.removeEventListener('playing', onPlaying);
+    reverseVideo.style.display = 'block';
+    mainVideo.style.display = 'none';
+    isReversePlaying = true;
+    pendingSwitch = false;
+  }
+  reverseVideo.addEventListener('playing', onPlaying);
 }
 
 function switchToMainForPlay() {
-  updateWebGLTexture(mainVideo)
   if (pendingSwitch || isExiting) return;
   pendingSwitch = true;
+
   const reverseTime = reverseVideo.currentTime;
   const mainTime = mainVideo.duration - reverseTime;
 
-  // 暂停 reverseVideo，但保持显示，避免空白
+  // 暂停倒放视频，但保持显示（避免空白）
   reverseVideo.pause();
+  // 不隐藏 reverseVideo，它将继续显示当前帧
 
-  // 设置主视频时间，先不显示
+  // 隐藏主视频，设置时间，等待 seek 完成
+  mainVideo.style.display = 'none';
   mainVideo.muted = !settings.audio;
   mainVideo.currentTime = mainTime;
 
-  // 等待 seek 完成后，先显示主视频，再隐藏 reverseVideo
-  mainVideo.addEventListener('seeked', function onSeeked() {
+  function onSeeked() {
     mainVideo.removeEventListener('seeked', onSeeked);
-    mainVideo.style.display = 'block';      // 先显示主视频
-    reverseVideo.style.display = 'none';    // 再隐藏倒放视频
+    clearTimeout(seekTimeout);
+    // 主视频准备好后，显示主视频并隐藏倒放视频
+    mainVideo.style.display = 'block';
+    reverseVideo.style.display = 'none';
     mainVideo.play().catch(() => {});
     isReversePlaying = false;
     pendingSwitch = false;
-  }, { once: true });
+  }
 
-  // 超时兜底：200ms 后如果 seeked 未触发，强制切换
-  setTimeout(() => {
-    if (pendingSwitch) {
-      mainVideo.addEventListener('seeked', function onSeeked() {
-      mainVideo.removeEventListener('seeked', onSeeked);
-      // 其他逻辑
-      mainVideo.style.display = 'block';
-      reverseVideo.style.display = 'none';
-      mainVideo.play().catch(() => {});
-      isReversePlaying = false;
-      pendingSwitch = false;
-      });
-    }
-  }, 200);
+  mainVideo.addEventListener('seeked', onSeeked, { once: true });
+
+  const seekTimeout = setTimeout(() => {
+    mainVideo.removeEventListener('seeked', onSeeked);
+    mainVideo.style.display = 'block';
+    reverseVideo.style.display = 'none';
+    mainVideo.play().catch(() => {});
+    isReversePlaying = false;
+    pendingSwitch = false;
+  }, 500);
 }
 const btnLoop = document.getElementById('btnLoop');
 const btnOpenCard = document.getElementById('btnOpenCard');
@@ -2327,10 +2337,7 @@ document.querySelectorAll('.card-item').forEach(el => {
     
     const v = el.dataset.video;
     video.crossOrigin = 'anonymous';   // 确保新源也跨域
-video.src = getMediaUrl(v);
-video.load();                      // 重新加载
-video.play().catch(() => {});
-updateWebGLTexture(video);         // 更新 WebGL 纹理
+
     if (v) {
       
       if (rewindMode) exitRewindMode(); // 关键：先退出倒放
@@ -2865,6 +2872,7 @@ btnLoop.onclick = () => {
 
 // 屏幕点击处理
 function handleScreenTap(e) {
+  if (pendingSwitch || isExiting) return;
   if (e.target.closest('.bottom-ui')) return;
   if (settingPage.classList.contains('show') || cardModal.classList.contains('show')) return;
 
