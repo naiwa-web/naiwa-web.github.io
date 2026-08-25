@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="icon" type="image/png" href="./AppIcon76x76@2x~ipad.png">
+    <title>奶蛙 · LiquidGlass</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        *,
+        *::before,
+        *::after { box-sizing: border-box; }
+        :root {
+            --ui-scale: 1;
+            --ui-bg-opacity: 0.55;
+            --ui-bg-blur: 12px;
+            --ui-bg-saturate: 1;
+            --ui-bg-inner-shadow: 0.2;
+        }
+        body {
+            background: #000;
+            overflow: hidden;
+            height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+            margin: 0;
+            transition: background-color .3s;
+        }
+        #viewport-container {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+    margin: 0 auto;
+    overflow: hidden;
+    transition: width 0.3s ease;
+}
+#viewport-container.lock-portrait-mode {
+    width: auto;
+    height: 100vh;
+    max-width: 100vw;
+    aspect-ratio: 9/16;
+    margin: 0 auto;
+}
+/* 宽屏打开设置页时，视频容器收窄到左半屏 */
+#viewport-container.settings-open {
+    width: 50%;
+    left: 0;
+    right: auto;
+    margin: 0;
+}
+        
+        #mainVideo,
+        #reverseVideo {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 0;
+            object-position: center;
+        }
+        #mainVideo.mode-cover, #reverseVideo.mode-cover { object-fit: cover; }
+        #mainVideo.mode-contain, #reverseVideo.mode-contain { object-fit: contain; }
+
+        /* 玻璃按钮（LiquidGlass 直接子元素） */
+        .glass-btn {
+    position: absolute;
+    bottom: 48px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #fff;
+    border: none;
+    background: transparent;
+    padding: 0;
+    font-size: 24px;
+    font-weight: bold;
+    overflow: visible;
+    will-change: left;
+}
+        .glass-btn > * {
+            position: relative;
+            z-index: 20;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+        }
+        /* 重新计算按钮位置，避免重叠 */
+        #btnStopRewind { left: calc(50% - 192px); width: 72px; height: 72px; border-radius: 50%; display: none; }
+        #btnLoop { left: calc(50% - 104px); width: 72px; height: 72px; border-radius: 50%; }
+        #btnOpenCard { left: calc(50% - 16px); width: 120px; height: 72px; border-radius: 36px; gap: 8px; }
+        #btnOpenSet { left: calc(50% + 120px); width: 72px; height: 72px; border-radius: 50%; }
+
+        /* 卡包弹窗 */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.35);
+            z-index: 300;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .modal-backdrop.show { opacity: 1; visibility: visible; }
+        .cardpack-sheet {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: #fff;
+            border-radius: 26px 26px 0 0;
+            display: flex;
+            flex-direction: column;
+            max-height: 82vh;
+            overflow: hidden;
+            transform: translateY(100%);
+            transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1);
+        }
+        .modal-backdrop.show .cardpack-sheet { transform: translateY(0); }
+        .sheet-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px 12px;
+            flex-shrink: 0;
+            background: #fff;
+        }
+        .score-badge, .event-tag {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #f3f3f5;
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-size: 16px;
+        }
+        .close-x {
+            width: 34px; height: 34px;
+            border-radius: 50%;
+            background: #eee;
+            border: none;
+            font-size: 18px;
+            color: #666;
+            cursor: pointer;
+        }
+        .card-content { overflow-y: auto; padding: 0 20px 20px; flex: 1; }
+        .cat-title { font-size: 14px; color: #777; margin: 22px 0 10px 2px; }
+        .card-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; }
+        .card-item {
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #eee;
+            cursor: pointer;
+        }
+        .card-thumb {
+            width: 100%; aspect-ratio: 1/1;
+            background: #f8f8f8;
+            overflow: hidden;
+            position: relative;
+        }
+        .card-thumb video { width: 100%; height: 100%; object-fit: cover; }
+        .card-name-bar {
+            background: #000;
+            color: #fff;
+            font-size: 14px;
+            text-align: center;
+            padding: 6px 0;
+        }
+
+        /* 设置页面 */
+        #settingPage {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 50%;
+    background: #fff;
+    z-index: 400;
+    overflow-y: auto;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(100%);
+    transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+#settingPage.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+}
+/* 竖屏时全屏 */
+@media (max-width: 768px) {
+    #settingPage {
+        width: 100%;
+    }
+}
+        .set-header { display: flex; align-items: center; padding: 16px 18px; gap: 10px; }
+        .backbtn { width: 46px; height: 46px; border-radius: 12px; background: #efefef; border: none; font-size: 22px; cursor: pointer; }
+        .set-header h2 { flex: 1; text-align: center; font-size: 20px; margin-right: 46px; }
+        .set-list { margin-top: 10px; }
+        .set-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid #eee;
+        }
+        /* 简单开关 */
+        .switch-wrap { position: relative; width: 60px; height: 34px; }
+        .switch-track { width: 60px; height: 34px; border-radius: 17px; background: #ccc; cursor: pointer; transition: background .2s; }
+        .switch-track.active { background: #3bbf4e; }
+        .switch-thumb { position: absolute; top: 3px; left: 3px; width: 28px; height: 28px; border-radius: 50%; background: #fff; transition: left .2s; }
+        .switch-track.active .switch-thumb { left: 29px; }
+
+        /* 参数滑块 */
+        input[type="range"] { width: 150px; }
+    </style>
+</head>
+<body>
+    <div id="viewport-container">
+        <video id="mainVideo" class="mode-cover" src="a1-glimpse.mp4" loop playsinline crossorigin="anonymous" muted></video>
+        <video id="reverseVideo" class="mode-cover" style="display:none;" loop playsinline crossorigin="anonymous"></video>
+
+        <!-- 玻璃按钮（LiquidGlass 直接子元素） -->
+        <button class="glass-btn" id="btnStopRewind" data-config='{"button":true,"cornerRadius":36,"refraction":0.8,"blurAmount":0.1}'>
+            <span>🚫</span>
+        </button>
+        <button class="glass-btn" id="btnLoop" data-config='{"button":true,"cornerRadius":36,"refraction":0.8,"blurAmount":0.1}'>
+            <span class="icon-loop">♻️</span>
+        </button>
+        <button class="glass-btn" id="btnOpenCard" data-config='{"button":true,"cornerRadius":36,"refraction":0.8,"blurAmount":0.1}'>
+            <span style="font-size:20px;">🃏</span><span>卡包</span>
+        </button>
+        <button class="glass-btn" id="btnOpenSet" data-config='{"button":true,"cornerRadius":36,"refraction":0.8,"blurAmount":0.1}'>
+            <span>⚙️</span>
+        </button>
+    </div>
+
+    <!-- 卡包弹窗 -->
+    <div class="modal-backdrop" id="cardModal">
+        <div class="cardpack-sheet">
+            <div class="sheet-header">
+                <div class="score-badge">😂 10</div>
+                <div class="event-tag">沉思纪+追忆纪 · 剩<span id="day-num">0</span>天</div>
+                <button class="close-x" id="closeCard">✕</button>
+            </div>
+            <div class="card-content">
+                <div class="cat-title">动作</div>
+                <div class="card-grid" id="cardGridAction"></div>
+                <div class="cat-title">场景</div>
+                <div class="card-grid" id="cardGridScene"></div>
+                <div class="cat-title">陪伴</div>
+                <div class="card-grid" id="cardGridCompanion"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置页面 -->
+    <div id="settingPage">
+        <div class="set-header">
+            <button class="backbtn" id="setBack">‹</button>
+            <h2>设置</h2>
+        </div>
+        <div class="set-list">
+            <div class="set-row">
+                <div>开启音频</div>
+                <div class="switch-wrap" id="wrapAudio">
+                    <div class="switch-track" data-target="audio">
+                        <div class="switch-thumb"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="set-row">
+                <div>横屏保持竖屏比例</div>
+                <div class="switch-wrap" id="wrapPortrait">
+                    <div class="switch-track" data-target="portrait">
+                        <div class="switch-thumb"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="set-row">
+                <div>水平镜像</div>
+                <div class="switch-wrap" id="wrapMirror">
+                    <div class="switch-track" data-target="mirror">
+                        <div class="switch-thumb"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="set-row">
+                <div>屏幕常亮</div>
+                <div class="switch-wrap" id="wrapWake">
+                    <div class="switch-track" data-target="wake">
+                        <div class="switch-thumb"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="set-row">
+                <div>开启镜像加速</div>
+                <div class="switch-wrap" id="wrapMirrorSource">
+                    <div class="switch-track" data-target="mirrorSource">
+                        <div class="switch-thumb"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="set-row">
+                <div>预加载所有视频</div>
+                <div class="switch-wrap" id="wrapPreload">
+                    <div class="switch-track" data-target="preload">
+                        <div class="switch-thumb"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="set-row">
+                <div>开启vConsole</div>
+                <div class="switch-wrap" id="wrapVConsole">
+                    <div class="switch-track" data-target="vconsole">
+                        <div class="switch-thumb"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="set-row">
+    <div>背景色</div>
+    <input type="color" id="bgColorPicker" value="#000000">
+</div>
+
+            <div class="set-row"><div>模糊强度</div><input type="range" id="blurAmount" min="0" max="1" step="0.01" value="0.1"></div>
+<div class="set-row"><div>折射强度</div><input type="range" id="refraction" min="0" max="2" step="0.01" value="0.8"></div>
+<div class="set-row"><div>色差</div><input type="range" id="chromAberration" min="0" max="0.2" step="0.01" value="0.05"></div>
+<div class="set-row"><div>边缘高光</div><input type="range" id="edgeHighlight" min="0" max="0.2" step="0.01" value="0.05"></div>
+<div class="set-row"><div>镜面高光</div><input type="range" id="specular" min="0" max="1" step="0.01" value="0.1"></div>
+<div class="set-row"><div>菲涅尔</div><input type="range" id="fresnel" min="0" max="2" step="0.01" value="1.0"></div>
+<div class="set-row"><div>扭曲</div><input type="range" id="distortion" min="0" max="0.1" step="0.01" value="0"></div>
+<div class="set-row"><div>圆角半径</div><input type="range" id="cornerRadius" min="0" max="60" step="1" value="36"></div>
+<div class="set-row"><div>Z轴半径</div><input type="range" id="zRadius" min="0" max="60" step="1" value="40"></div>
+<div class="set-row"><div>不透明度</div><input type="range" id="opacity" min="0" max="1" step="0.01" value="1"></div>
+<div class="set-row"><div>饱和度</div><input type="range" id="saturation" min="-1" max="1" step="0.01" value="0"></div>
+<div class="set-row"><div>色调强度</div><input type="range" id="tintStrength" min="0" max="1" step="0.01" value="0"></div>
+<div class="set-row"><div>亮度</div><input type="range" id="brightness" min="-0.5" max="0.5" step="0.01" value="0"></div>
+<div class="set-row"><div>阴影不透明度</div><input type="range" id="shadowOpacity" min="0" max="1" step="0.01" value="0.3"></div>
+<div class="set-row"><div>阴影扩散</div><input type="range" id="shadowSpread" min="0" max="30" step="1" value="10"></div>
+<div class="set-row"><div>阴影Y偏移</div><input type="range" id="shadowOffsetY" min="0" max="10" step="1" value="1"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { LiquidGlass } from 'https://cdn.jsdelivr.net/npm/@ybouane/liquidglass/dist/index.js';
+        const mainVideo = document.getElementById('mainVideo');
+        const DEFAULT_SETTINGS = {
+    audio: true,
+    portrait: false,       // 自动横屏模式会覆盖此项，但可保留手动开关状态
+    mirror: false,
+    wake: false,
+    useMirror: false,
+    preload: false,
+    vconsole: false,
+    backgroundColor: '#000000',
+    glassParams: {
+        blurAmount: 0.1,
+        refraction: 0.8,
+        chromAberration: 0.05,
+        edgeHighlight: 0.05,
+        specular: 0.1,
+        fresnel: 1.0,
+        distortion: 0.0,
+        cornerRadius: 36,
+        zRadius: 40,
+        opacity: 1.0,
+        saturation: 0.0,
+        tintStrength: 0.0,
+        brightness: 0.0,
+        shadowOpacity: 0.3,
+        shadowSpread: 10,
+        shadowOffsetY: 1
+    }
+};
+
+let settings = loadSettings();
+
+function loadSettings() {
+    try {
+        const saved = localStorage.getItem('naifrog_settings');
+        return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : { ...DEFAULT_SETTINGS };
+    } catch (e) {
+        return { ...DEFAULT_SETTINGS };
+    }
+}
+
+function saveSettings() {
+    localStorage.setItem('naifrog_settings', JSON.stringify(settings));
+}
+        
+        // 业务逻辑变量
+        const viewportContainer = document.getElementById('viewport-container');
+
+        const reverseVideo = document.getElementById('reverseVideo');
+        const btnLoop = document.getElementById('btnLoop');
+        const btnStopRewind = document.getElementById('btnStopRewind');
+        const btnOpenCard = document.getElementById('btnOpenCard');
+        const btnOpenSet = document.getElementById('btnOpenSet');
+        const cardModal = document.getElementById('cardModal');
+        const closeCardBtn = document.getElementById('closeCard');
+        const settingPage = document.getElementById('settingPage');
+        const setBack = document.getElementById('setBack');
+        const bgColorPicker = document.getElementById('bgColorPicker');
+bgColorPicker.addEventListener('input', (e) => {
+    settings.backgroundColor = e.target.value;
+    document.body.style.backgroundColor = e.target.value;
+    viewportContainer.style.backgroundColor = e.target.value;
+    saveSettings();
+});
+
+mainVideo.style.backgroundColor = 'transparent'
+
+        let isPlay = false;   // 初始播放
+        let rewindMode = false;
+        let isReversePlaying = false;
+        let pendingSwitch = false;
+        let isExiting = false;
+        let originalVideoSrc = '';
+        let reverseVideoSrc = '';
+        let firstUserGestureHandled = false;
+
+function attachFirstUserGestureHandler() {
+    const handler = () => {
+        if (!firstUserGestureHandled) {
+            firstUserGestureHandled = true;
+            if (settings.audio && mainVideo) {
+                mainVideo.muted = false;   // 用户已交互，可以安全取消静音
+                if (mainVideo.paused) {
+                    mainVideo.play().catch(() => {});
+                }
+            }
+            document.removeEventListener('click', handler);
+            document.removeEventListener('touchstart', handler);
+        }
+    };
+    document.addEventListener('click', handler);
+    document.addEventListener('touchstart', handler);
+}
+
+        // 设置对象
+
+
+        // 支持倒放的视频白名单
+        const rewindableVideos = new Set([
+            'a1-glimpse.mp4', 'a2-turtle.mp4', 'a3-angel.mp4', 'a4-meditation.mp4',
+            'a5-flexible.mp4', 'a6-pass.mp4', 'a7-pet.mp4', 'a8-taiji.mp4',
+            'b1-police.mp4', 'b2-apple.mp4', 'b3-egg.mp4', 'b4-sad.mp4',
+            'b5-legend.mp4', 'b6-born.mp4', 'b7-arrive.mp4'
+        ]);
+
+        function getReverseSrc(src) {
+            return src.split('?')[0].replace(/\.mp4$/, '-reverse.mp4');
+        }
+        function canRewind() {
+            const filename = mainVideo.src.split('/').pop().split('?')[0];
+            return rewindableVideos.has(filename);
+        }
+
+        // 初始化按钮显示状态
+        btnStopRewind.style.display = 'none';
+
+        // 初始化 LiquidGlass
+        autoPortraitMode();
+        const glassElements = document.querySelectorAll('.glass-btn');
+        const glassConfig = {
+            button: true,
+            blurAmount: 0.1,
+            refraction: 0.8,
+            chromAberration: 0.05,
+            edgeHighlight: 0.05,
+            specular: 0.1,
+            fresnel: 1.0,
+            distortion: 0.0,
+            cornerRadius: 36,
+            zRadius: 40,
+            opacity: 1.0,
+            saturation: 0.0,
+            tintStrength: 0.0,
+            brightness: 0.0,
+            shadowOpacity: 0.3,
+            shadowSpread: 10,
+            shadowOffsetY: 1
+        };
+        glassElements.forEach(el => {
+            el.dataset.config = JSON.stringify(glassConfig);
+        });
+
+        const liquidGlass = await LiquidGlass.init({
+            root: viewportContainer,
+            glassElements,
+            defaults: glassConfig
+        });
+        attachFirstUserGestureHandler();
+        restoreSwitches();      // 恢复开关视觉状态
+        applySwitchEffects();   // 恢复开关实际功能
+        applyGlassParams();     // 应用玻璃参数
+        applyBackgroundColor(); // 应用背景色
+        updateButtonPositions();
+        // disabled视频自动播放
+        //mainVideo.muted = true;
+        //mainVideo.play().catch(() => {});
+        //btnLoop.querySelector('.icon-loop').textContent = '🚫';
+
+        // 参数滑块绑定
+        const paramIds = [
+            'blurAmount','refraction','chromAberration','edgeHighlight','specular',
+            'fresnel','distortion','cornerRadius','zRadius','opacity','saturation',
+            'tintStrength','brightness','shadowOpacity','shadowSpread','shadowOffsetY'
+        ];
+        paramIds.forEach(id => {
+            const input = document.getElementById(id);
+            input.addEventListener('input', () => {
+                const val = parseFloat(input.value);
+                glassConfig[id] = val;
+                glassElements.forEach(el => {
+                    const cfg = JSON.parse(el.dataset.config || '{}');
+                    cfg[id] = val;
+                    el.dataset.config = JSON.stringify(cfg);
+                });
+            });
+        });
+function restoreSwitches() {
+    const switchMap = {
+        audio: 'wrapAudio',
+        portrait: 'wrapPortrait',
+        mirror: 'wrapMirror',
+        wake: 'wrapWake',
+        useMirror: 'wrapMirrorSource',
+        preload: 'wrapPreload',
+        vconsole: 'wrapVConsole'
+    };
+    Object.entries(switchMap).forEach(([key, wrapId]) => {
+        const track = document.querySelector(`#${wrapId} .switch-track`);
+        if (track) {
+            if (settings[key]) {
+                track.classList.add('active');
+            } else {
+                track.classList.remove('active');
+            }
+        }
+    });
+}
+        function setupSwitch(wrapId, settingKey) {
+    const track = document.querySelector(`#${wrapId} .switch-track`);
+    track.addEventListener('click', () => {
+        track.classList.toggle('active');
+        settings[settingKey] = track.classList.contains('active'); // 先更新设置
+        saveSettings(); // 再保存
+        applySwitchEffects(); // 确保功能立即更新
+        console.log(`${settingKey}:`, settings[settingKey]);
+
+        if (settingKey === 'audio') {
+    if (settings.audio) {
+        // 用户主动开启，可以立即取消静音（因为点击就是用户手势）
+        mainVideo.muted = false;
+    } else {
+        mainVideo.muted = true;
+    }
+    saveSettings();
+}
+        if (settingKey === 'portrait') {
+            viewportContainer.classList.toggle('lock-portrait-mode', settings.portrait);
+        }
+        if (settingKey === 'mirror') {
+            mainVideo.style.transform = settings.mirror ? 'scaleX(-1)' : 'scaleX(1)';
+        }
+        // 其他开关逻辑
+    });
+}
+        setupSwitch('wrapAudio', 'audio');
+        setupSwitch('wrapPortrait', 'portrait');
+        setupSwitch('wrapMirror', 'mirror');
+        setupSwitch('wrapWake', 'wake');
+        setupSwitch('wrapMirrorSource', 'useMirror');
+        setupSwitch('wrapPreload', 'preload');
+        setupSwitch('wrapVConsole', 'vconsole');
+
+        // ========== 视频与倒放逻辑 ==========
+        function enterRewindMode() {
+            if (rewindMode || pendingSwitch || isExiting || !isPlay || mainVideo.currentTime < 0.1) return;
+            if (!canRewind()) {
+                alert('该视频无倒放版本');
+                return;
+            }
+            rewindMode = true;
+            btnStopRewind.style.display = 'flex';
+             updateButtonPositions();
+            btnLoop.querySelector('.icon-loop').textContent = '♻️';
+
+            originalVideoSrc = mainVideo.src;
+            reverseVideoSrc = getReverseSrc(originalVideoSrc);
+            mainVideo.pause();
+            switchToReverse();
+        }
+
+        function switchToReverse() {
+            if (pendingSwitch || isExiting) return;
+            pendingSwitch = true;
+            const origTime = mainVideo.currentTime;
+            reverseVideo.src = reverseVideoSrc;
+            reverseVideo.className = mainVideo.className;
+            reverseVideo.load();
+
+            reverseVideo.addEventListener('loadedmetadata', function onMeta() {
+                reverseVideo.removeEventListener('loadedmetadata', onMeta);
+                reverseVideo.currentTime = reverseVideo.duration - origTime;
+                reverseVideo.muted = false;
+                reverseVideo.play().catch(() => { pendingSwitch = false; });
+            });
+
+            reverseVideo.addEventListener('playing', function onPlaying() {
+                reverseVideo.removeEventListener('playing', onPlaying);
+                reverseVideo.style.display = 'block';
+                mainVideo.style.display = 'none';
+                isReversePlaying = true;
+                pendingSwitch = false;
+                liquidGlass.markChanged();
+            });
+        }
+
+        function switchToMainForPlay() {
+            if (pendingSwitch || isExiting) return;
+            pendingSwitch = true;
+            const reverseTime = reverseVideo.currentTime;
+            const mainTime = mainVideo.duration - reverseTime;
+
+            reverseVideo.pause();
+            reverseVideo.style.display = 'none';
+            mainVideo.style.display = 'none';
+            mainVideo.muted = !settings.audio;
+            mainVideo.currentTime = mainTime;
+
+            function onSeeked() {
+                mainVideo.removeEventListener('seeked', onSeeked);
+                clearTimeout(seekTimeout);
+                mainVideo.style.display = 'block';
+                mainVideo.play().catch(() => {});
+                isReversePlaying = false;
+                pendingSwitch = false;
+                liquidGlass.markChanged();
+            }
+            mainVideo.addEventListener('seeked', onSeeked, { once: true });
+            const seekTimeout = setTimeout(() => {
+                mainVideo.removeEventListener('seeked', onSeeked);
+                mainVideo.style.display = 'block';
+                mainVideo.play().catch(() => {});
+                isReversePlaying = false;
+                pendingSwitch = false;
+                liquidGlass.markChanged();
+            }, 500);
+        }
+
+        function exitRewindMode() {
+            if (!rewindMode || isExiting) return;
+            isExiting = true;
+            rewindMode = false;
+            btnStopRewind.style.display = 'none';
+            updateButtonPositions();
+            btnLoop.querySelector('.icon-loop').textContent = '♻️';
+
+            reverseVideo.pause();
+            reverseVideo.removeAttribute('src');
+            reverseVideo.load();
+            reverseVideo.style.display = 'none';
+            mainVideo.style.display = 'block';
+            mainVideo.pause();
+            mainVideo.currentTime = 0;
+            mainVideo.muted = !settings.audio;
+            isReversePlaying = false;
+            pendingSwitch = false;
+            isExiting = false;
+            liquidGlass.markChanged();
+        }
+        window.addEventListener('resize', updateButtonPositions);
+        window.addEventListener('resize', updateVideoFit);
+        // 屏幕点击处理
+        function handleScreenTap(e) {
+            if (e.target.closest('.glass-btn')) return;
+            if (settingPage.classList.contains('show') || cardModal.classList.contains('show')) return;
+            const rect = viewportContainer.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const isLeft = x < rect.width / 2;
+
+            if (!rewindMode) {
+                if (isLeft) {
+                    if (isPlay) enterRewindMode();
+                    else {
+                        mainVideo.play().catch(() => {});
+                        isPlay = true;
+                        btnLoop.querySelector('.icon-loop').textContent = '🚫';
+                    }
+                }
+            } else {
+                if (isLeft) {
+                    if (!isReversePlaying) switchToReverse();
+                    else {
+                        reverseVideo.muted = false;
+                        reverseVideo.play().catch(() => {});
+                    }
+                } else {
+                    resumeNormalPlay();
+                }
+            }
+        }
+        function resumeNormalPlay() {
+            if (!rewindMode || pendingSwitch || isExiting) return;
+            if (isReversePlaying) switchToMainForPlay();
+            else {
+                mainVideo.muted = !settings.audio;
+                mainVideo.play().catch(() => {});
+            }
+        }
+        viewportContainer.addEventListener('click', handleScreenTap);
+        viewportContainer.addEventListener('touchstart', e => {
+            const t = e.touches[0];
+            if (t) handleScreenTap({ clientX: t.clientX, target: e.target });
+        }, { passive: true });
+
+        // 按钮事件
+        btnLoop.addEventListener('click', () => {
+            if (rewindMode) { exitRewindMode(); return; }
+            if (isPlay) {
+                mainVideo.pause();
+                mainVideo.currentTime = 0;
+                isPlay = false;
+                btnLoop.querySelector('.icon-loop').textContent = '♻️';
+            } else {
+                mainVideo.play().catch(() => {});
+                isPlay = true;
+                btnLoop.querySelector('.icon-loop').textContent = '🚫';
+            }
+        });
+        btnStopRewind.addEventListener('click', () => exitRewindMode());
+        btnOpenCard.addEventListener('click', () => cardModal.classList.add('show'));
+        btnOpenSet.addEventListener('click', () => settingPage.classList.add('show'));
+        closeCardBtn.addEventListener('click', () => cardModal.classList.remove('show'));
+        setBack.addEventListener('click', () => settingPage.classList.remove('show'));
+
+        // 倒放自动退出
+        reverseVideo.addEventListener('timeupdate', () => {
+            if (rewindMode && isReversePlaying && reverseVideo.currentTime <= 0.05) {
+                exitRewindMode();
+            }
+        });
+
+        // 卡包数据（完整列表）
+        const allCards = [
+            { name: '惊鸿一瞥', file: 'a1-glimpse.mp4', cat: 'action' },
+            { name: '龟速前进', file: 'a2-turtle.mp4', cat: 'action' },
+            { name: '虔诚', file: 'a3-angel.mp4', cat: 'action' },
+            { name: '嘘', file: 'a4-meditation.mp4', cat: 'action' },
+            { name: '收放自如', file: 'a5-flexible.mp4', cat: 'action' },
+            { name: '路过', file: 'a6-pass.mp4', cat: 'action' },
+            { name: '宠物', file: 'a7-pet.mp4', cat: 'action' },
+            { name: '太极', file: 'a8-taiji.mp4', cat: 'action' },
+            { name: '相视一笑', file: 'b1-police.mp4', cat: 'scene' },
+            { name: '万有引力', file: 'b2-apple.mp4', cat: 'scene' },
+            { name: '破壳', file: 'b3-egg.mp4', cat: 'scene' },
+            { name: '负蛙', file: 'b4-sad.mp4', cat: 'scene' },
+            { name: '传说', file: 'b5-legend.mp4', cat: 'scene' },
+            { name: '神圣', file: 'b6-born.mp4', cat: 'scene' },
+            { name: '降临', file: 'b7-arrive.mp4', cat: 'scene' },
+            { name: '蛙不易', file: 'c1-rain.mp4', cat: 'companion' },
+            { name: '忧郁童年', file: 'c2-kid.mp4', cat: 'companion' },
+            { name: '吨吨喝水', file: 'c3-drink.mp4', cat: 'companion' },
+            { name: '好好学习', file: 'c4-study.mp4', cat: 'companion' },
+            { name: '打工蛙', file: 'c5-work.mp4', cat: 'companion' }
+        ];
+
+        function buildCards() {
+            const actionGrid = document.getElementById('cardGridAction');
+            const sceneGrid = document.getElementById('cardGridScene');
+            const companionGrid = document.getElementById('cardGridCompanion');
+            allCards.forEach(card => {
+                const div = document.createElement('div');
+                div.className = 'card-item';
+                div.dataset.video = card.file;
+                div.innerHTML = `<div class="card-thumb"></div><div class="card-name-bar">${card.name}</div>`;
+                div.addEventListener('click', () => {
+                    if (rewindMode) exitRewindMode();
+                    mainVideo.src = card.file;
+                    mainVideo.play().catch(() => {});
+                    isPlay = true;
+                    btnLoop.querySelector('.icon-loop').textContent = '🚫';
+                    cardModal.classList.remove('show');
+                    liquidGlass.markChanged();
+                });
+                if (card.cat === 'action') actionGrid.appendChild(div);
+                else if (card.cat === 'scene') sceneGrid.appendChild(div);
+                else companionGrid.appendChild(div);
+            });
+        }
+        buildCards();
+
+        
+        console.log('LiquidGlass initialized');
+
+
+        function updateButtonPositions() {
+    const visibleButtons = Array.from(document.querySelectorAll('.glass-btn')).filter(btn => btn.style.display !== 'none');
+    if (visibleButtons.length === 0) return;
+
+    const gap = 24; // 按钮间距
+    const containerWidth = viewportContainer.clientWidth; // 关键：使用容器宽度
+    const totalWidth = visibleButtons.reduce((sum, btn) => sum + btn.offsetWidth, 0) + gap * (visibleButtons.length - 1);
+    let currentX = (containerWidth - totalWidth) / 2;
+
+    visibleButtons.forEach(btn => {
+        btn.style.left = currentX + 'px';
+        currentX += btn.offsetWidth + gap;
+    });
+}
+
+function isWideScreen() {
+    return window.innerWidth > window.innerHeight;
+}
+
+function openSettings() {
+    
+    if (isWideScreen()) {
+        settingPage.style.width = '50%';
+        settingPage.style.left = 'auto';
+        settingPage.style.right = '0';
+        viewportContainer.classList.add('settings-open');
+    } else {
+        settingPage.style.width = '100%';
+        viewportContainer.classList.remove('settings-open');
+    }
+    settingPage.classList.add('show');
+    updateButtonPositions();
+}
+
+function closeSettings() {
+    
+    settingPage.classList.remove('show');
+    viewportContainer.classList.remove('settings-open');
+    updateButtonPositions();
+}
+
+btnOpenSet.addEventListener('click', openSettings);
+setBack.addEventListener('click', closeSettings);
+
+function updateVideoFit() {
+    if (settings.portrait || viewportContainer.classList.contains('settings-open')) {
+        mainVideo.classList.remove('mode-cover');
+        mainVideo.classList.add('mode-contain');
+    } else {
+        if (window.innerWidth > window.innerHeight) {
+            mainVideo.classList.remove('mode-cover');
+            mainVideo.classList.add('mode-contain');
+        } else {
+            mainVideo.classList.remove('mode-contain');
+            mainVideo.classList.add('mode-cover');
+        }
+    }
+}
+
+// 自动横屏保持竖屏比例
+function autoPortraitMode() {
+    const isLandscape = window.innerWidth > window.innerHeight;
+    if (isLandscape) {
+        viewportContainer.classList.add('lock-portrait-mode');
+        settings.portrait = true;
+        document.querySelector('#wrapPortrait .switch-track').classList.add('active');
+    } else {
+        viewportContainer.classList.remove('lock-portrait-mode');
+        settings.portrait = false;
+        document.querySelector('#wrapPortrait .switch-track').classList.remove('active');
+    }
+    updateVideoFit();
+    updateButtonPositions();
+}
+
+// 监听窗口尺寸变化
+window.addEventListener('resize', autoPortraitMode);
+window.addEventListener('orientationchange', autoPortraitMode);
+
+// 将玻璃参数应用到所有按钮
+function applyGlassParams() {
+    const params = settings.glassParams;
+    document.querySelectorAll('.glass-btn').forEach(el => {
+        el.dataset.config = JSON.stringify({ button: true, ...params });
+    });
+    // 更新滑块
+    Object.keys(params).forEach(key => {
+        const input = document.getElementById(key);
+        if (input) input.value = params[key];
+    });
+}
+
+// 应用背景色
+function applyBackgroundColor() {
+    document.body.style.backgroundColor = settings.backgroundColor;
+    viewportContainer.style.backgroundColor = settings.backgroundColor;
+    const bgColorPicker = document.getElementById('bgColorPicker');
+    if (bgColorPicker) bgColorPicker.value = settings.backgroundColor;
+}
+paramIds.forEach(id => {
+    const input = document.getElementById(id);
+    input.addEventListener('input', () => {
+        settings.glassParams[id] = parseFloat(input.value);
+        saveSettings();
+        applyGlassParams();
+    });
+});
+function syncAudio() {
+    if (mainVideo) {
+        mainVideo.muted = !settings.audio;
+    }
+}
+function applySwitchEffects() {
+    // 音频
+    if (settings.audio) {
+    // 不立即取消静音，等待首次用户手势
+    mainVideo.muted = true;
+} else {
+    mainVideo.muted = true;
+}
+    // 横屏保持竖屏比例
+    viewportContainer.classList.toggle('lock-portrait-mode', settings.portrait);
+
+    // 水平镜像
+    mainVideo.style.transform = settings.mirror ? 'scaleX(-1)' : 'scaleX(1)';
+
+    // 屏幕常亮
+    if (settings.wake) {
+        if (navigator.wakeLock) {
+            navigator.wakeLock.request('screen').catch(() => {
+                settings.wake = false;
+                saveSettings();
+                document.querySelector('#wrapWake .switch-track').classList.remove('active');
+            });
+        } else {
+            settings.wake = false;
+            saveSettings();
+            document.querySelector('#wrapWake .switch-track').classList.remove('active');
+        }
+    }
+
+    // 预加载视频（如果函数存在）
+    if (settings.preload && typeof preloadAllCardVideos === 'function') {
+        preloadAllCardVideos();
+    }
+
+    // vConsole
+    if (settings.vconsole) {
+        loadVConsole();
+    }
+}
+function loadVConsole() {
+    if (!window.VConsole) {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/vconsole';
+        script.onload = () => {
+            window.vConsole = new VConsole();
+            console.log('vConsole 已加载');
+        };
+        document.body.appendChild(script);
+    } else {
+        console.log('vConsole 已存在');
+    }
+}
+
+function unloadVConsole() {
+    // 可选：移除 vConsole 的 DOM 或仅刷新页面
+    console.log('vConsole 卸载（示例）');
+}
+    </script>
+</body>
+</html>
