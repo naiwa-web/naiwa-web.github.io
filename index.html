@@ -131,7 +131,7 @@ overflow: hidden;
   position: fixed;          /* 改为 fixed，覆盖整个视口 */
   inset: 0;
   background: rgba(0,0,0,.35);
-  z-index: 99;
+  z-index: 9999;
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.3s ease, visibility 0.3s ease;
@@ -146,6 +146,7 @@ overflow: hidden;
   border-radius:26px 26px 0 0;
   display:flex; flex-direction:column; max-height:82vh;
   overflow:hidden;
+  z-index: 10000;
   transform: translateY(100%);
   transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
@@ -154,7 +155,7 @@ overflow: hidden;
 }
 .sheet-header{
   display:flex; align-items:center; justify-content:space-between;
-  padding:16px 20px 12px; flex-shrink:0; background:#fff; z-index:2; zoom: var(--ui-scale); 
+  padding:16px 20px 12px; flex-shrink:0; background:#fff; z-index:999; zoom: var(--ui-scale); 
 }
 .score-badge,.event-tag{
   display:flex; align-items:center; gap:6px;
@@ -166,13 +167,13 @@ overflow: hidden;
   width:34px; height:34px; border-radius:50%;
   background:#eee; border:none; font-size:18px; color:#666; cursor:pointer;
 }
-.card-content{ overflow-y:auto; padding:0 20px 20px; flex:1; }
-.cat-title{ font-size:14px; color:#777; margin:22px 0 10px 2px; }
-.card-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
-.card-item{ border-radius:12px; overflow:hidden; border:1px solid #eee; cursor:pointer; }
-.card-thumb{ width:100%; aspect-ratio:1/1; background:#f8f8f8; overflow:hidden; position:relative; }
-.card-thumb video{ width:100%; height:100%; object-fit:cover; display:block; pointer-events:none; }
-.card-name-bar{ background:#000; color:#fff; font-size:14px; text-align:center; padding:6px 0; }
+.card-content{ overflow-y:auto; padding:0 20px 20px; flex:1;z-index: 9999; }
+.cat-title{ font-size:14px; color:#777; margin:22px 0 10px 2px;z-index: 9999; }
+.card-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px;z-index: 9999; }
+.card-item{ border-radius:12px; overflow:hidden; border:1px solid #eee; cursor:pointer;z-index: 9999; }
+.card-thumb{ width:100%; aspect-ratio:1/1; background:#f8f8f8; overflow:hidden; position:relative;z-index: 9999; }
+.card-thumb video{ width:100%; height:100%; object-fit:cover; display:block; pointer-events:none;z-index: 9999; }
+.card-name-bar{ background:#000; color:#fff; font-size:14px; text-align:center; padding:6px 0;z-index: 9999; }
 
 /* 设置全屏页 */
 #settingPage{
@@ -180,6 +181,7 @@ overflow: hidden;
   overflow-y:auto;
   zoom:var(--ui-scale);               /* Chrome & Firefox 126+ 支持 */
   opacity:0;
+  z-index: 9999;
   visibility:hidden;
   transform: translateX(100%);
   transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1);
@@ -664,7 +666,7 @@ body.render-mode-webgl #btnStopRewind > * {
     <div class="set-header">
       <button class="backbtn" id="setBack">‹</button>
       <h2>设置</h2>
-      <i>v0.5.3R</i>
+      <i>v0.5.4R</i>
     </div>
 
     <div class="cat-title" style="margin-left:20px; margin-top:24px; font-weight:600;"><i>通用</i></div>
@@ -929,6 +931,7 @@ body.render-mode-webgl #btnStopRewind > * {
             *svg模式的液态玻璃在较新chrome中可用，<a style="color:#ff6600">safari和firefox不可用。</a><a style="color: #00ff40;">WebGl全平台通用</a>
           </i>
       </div>
+      <div> <a href="./naiwa_reborn.html" style="color:#ff6600">体验新版</a> </div>
       <div>
         <i>*视频资源提取自
              <a href="https://apps.apple.com/cn/app/%E5%A5%B6%E8%9B%99-%E7%82%B9%E4%B8%80%E4%B8%8B%E5%B0%B1%E7%8B%82%E7%AC%91%E6%8A%BD%E8%B1%A1%E9%AD%94%E6%80%A7/id6761310915">奶蛙APP</a>

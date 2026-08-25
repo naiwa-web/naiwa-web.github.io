@@ -217,6 +217,11 @@
 
         /* 参数滑块 */
         input[type="range"] { width: 150px; }
+
+        /* 当设置页打开且宽屏时，卡包弹窗只覆盖左半屏 */
+body.settings-open .modal-backdrop {
+    right: 50%;
+}
     </style>
 </head>
 <body>
@@ -820,24 +825,25 @@ function isWideScreen() {
 }
 
 function openSettings() {
-    
     if (isWideScreen()) {
         settingPage.style.width = '50%';
         settingPage.style.left = 'auto';
         settingPage.style.right = '0';
         viewportContainer.classList.add('settings-open');
+        document.body.classList.add('settings-open'); // 新增
     } else {
         settingPage.style.width = '100%';
         viewportContainer.classList.remove('settings-open');
+        document.body.classList.remove('settings-open'); // 新增
     }
     settingPage.classList.add('show');
     updateButtonPositions();
 }
 
 function closeSettings() {
-    
     settingPage.classList.remove('show');
     viewportContainer.classList.remove('settings-open');
+    document.body.classList.remove('settings-open'); // 新增
     updateButtonPositions();
 }
 
