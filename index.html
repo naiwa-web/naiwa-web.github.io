@@ -664,7 +664,7 @@ body.render-mode-webgl #btnStopRewind > * {
     <div class="set-header">
       <button class="backbtn" id="setBack">‹</button>
       <h2>设置</h2>
-      <i>v0.5.1</i>
+      <i>v0.5.2</i>
     </div>
 
     <div class="cat-title" style="margin-left:20px; margin-top:24px; font-weight:600;"><i>通用</i></div>
@@ -854,9 +854,13 @@ body.render-mode-webgl #btnStopRewind > * {
         <div class="liquid-slider-container" id="sliderUiScale" data-min="0.3" data-max="1.5" data-step="0.01" data-value="1"></div>
       </div>
       <div class="set-row">
-        <div>svg模式采样范围</div>
+        <div>svg模式采样范围[目前没用]</div>
         <div class="liquid-slider-container" id="sliderSampleRange" data-min="1.0" data-max="1.5" data-step="0.01" data-value="1.0"></div>
       </div>
+      <div class="set-row">
+  <div>WebGL模式采样范围</div>
+  <div class="liquid-slider-container" id="sliderWebGLSampleRange" data-min="0.1" data-max="3.0" data-step="0.01" data-value="1.0"></div>
+</div>
       <!-- 开关模块大小滑块 -->
       <div class="set-row">
         <div>开关模块大小</div>
@@ -1916,7 +1920,7 @@ vec2 refractedUV = baseUV + uvOffset;
       uTint: { value: 0.08 },
       uShadow: { value: 0.5 },
       uVideoTex: { value: sharedVideoTexture },
-      uSampleRangeScale: { value: 2.0 },   // 初始 1.0，可调大如 1.3
+      uSampleRangeScale: { value: settings.webglSampleRangeScale || 1.0 },   // 初始 1.0，可调大如 1.3
     };
 
     const material = new THREE.ShaderMaterial({
@@ -1945,6 +1949,10 @@ vec2 refractedUV = baseUV + uvOffset;
   // 初始化位置和渲染循环
   updateButtonWebGLParams();
   startButtonWebGLRenderLoop();
+
+  webglButtonContexts.forEach(ctx => {
+  ctx.uniforms.uSampleRangeScale.value = settings.webglSampleRangeScale || 1.0;
+});
 }
 
 function updateButtonWebGLParams() {
@@ -2173,6 +2181,8 @@ let switchInited = false;
 let switchVConsole;       // 开关实例
 let vConsoleInstance = null;  // vConsole 实例
 let cacheAllInProgress = false; // 是否正在执行一键缓存
+let sliderSampleRange;          // SVG 模式采样范围滑块
+let sliderWebGLSampleRange;    // WebGL 模式采样范围滑块
 
 const STORAGE_KEY = 'naifrog_settings';
 const defaultSettings = {
@@ -2190,7 +2200,8 @@ const defaultSettings = {
   cacheDone: false,   // 视频是否已全部缓存
   renderMode: 'svg',
   sampleExpandEnabled: false,
-  sampleRangeScale: 1.0,   // 采样范围系数，默认 1.0
+  sampleRangeScale: 1.0,          // SVG 模式采样范围
+  webglSampleRangeScale: 2.0,     // WebGL 模式采样范围
 };
 let settings = Object.assign({}, defaultSettings, loadSettings());
 
@@ -2476,6 +2487,20 @@ sliderSampleRange = createLiquidGlassSlider(
   document.getElementById('sliderBgSaturate'), 'filterSliderBgSaturate',
   settings.bgSaturate, 0, 3, 0.01,
   (val) => { settings.bgSaturate = val; document.documentElement.style.setProperty('--ui-bg-saturate', val); saveSettings(); }
+);
+sliderWebGLSampleRange = createLiquidGlassSlider(
+  document.getElementById('sliderWebGLSampleRange'), 'filterSliderWebGLSampleRange',
+  settings.webglSampleRangeScale, 0.1, 3.0, 0.01,
+  (val) => {
+    settings.webglSampleRangeScale = val;
+    saveSettings();
+    // 更新所有 WebGL 按钮的 uniform
+    webglButtonContexts.forEach(ctx => {
+      if (ctx.uniforms && ctx.uniforms.uSampleRangeScale) {
+        ctx.uniforms.uSampleRangeScale.value = val;
+      }
+    });
+  }
 );
 sliderBgInnerShadow = createLiquidGlassSlider(
   document.getElementById('sliderBgInnerShadow'), 'filterSliderBgInnerShadow',
